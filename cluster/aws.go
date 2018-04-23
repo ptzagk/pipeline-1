@@ -359,7 +359,7 @@ func getNodeServerPool(clusterName string, location string, nodePool *model.Amaz
 			},
 		},
 		Type:     kcluster.ServerPoolTypeNode,
-		Name:     fmt.Sprintf("%s.node.%s", clusterName, nodePool.Name),
+		Name:     getNodeName(clusterName, nodePool.Name),
 		MinCount: nodePool.NodeMinCount,
 		MaxCount: nodePool.NodeMaxCount,
 		Image:    nodePool.NodeImage, //"ami-835b4efa"
@@ -414,7 +414,7 @@ func getNodeServerPool(clusterName string, location string, nodePool *model.Amaz
 		},
 		Subnets: []*kcluster.Subnet{
 			{
-				Name:     fmt.Sprintf("%s.node.%s", clusterName, nodePool.Name),
+				Name:     getNodeName(clusterName, nodePool.Name),
 				CIDR:     cidr,
 				Location: location,
 			},
@@ -563,6 +563,8 @@ func (c *AWSCluster) UpdateCluster(request *components.UpdateClusterRequest) err
 		}
 	}
 
+	updatedNodePools = addMarkedForDeletePools(c.modelCluster.Amazon.NodePools, updatedNodePools)
+
 	log.Info("Create updated model")
 	updateCluster := &model.ClusterModel{
 		ID:             c.modelCluster.ID,
@@ -595,18 +597,21 @@ func (c *AWSCluster) UpdateCluster(request *components.UpdateClusterRequest) err
 	var globalI int
 	var missingIds []int
 	for _, np := range updatedNodePools {
-		var id int
-		id, err := findServerPool(kubicornCluster.ServerPools, c.GetName(), np.Name)
-		if err != nil {
-			missingIds = append(missingIds, globalI)
-		} else {
-			log.Infof("Update existing nodepool: %s", np.Name)
-			kubicornCluster.ServerPools[id].MinCount = np.NodeMinCount
-			kubicornCluster.ServerPools[id].MaxCount = np.NodeMaxCount
+		if !np.Delete {
+			var id int
+			id, err := findServerPool(kubicornCluster.ServerPools, c.GetName(), np.Name)
+			if err != nil {
+				missingIds = append(missingIds, globalI)
+			} else {
+				log.Infof("Update existing nodepool: %s", np.Name)
+				kubicornCluster.ServerPools[id].MinCount = np.NodeMinCount
+				kubicornCluster.ServerPools[id].MaxCount = np.NodeMaxCount
+			}
+			globalI += 1
 		}
-		globalI += 1
 	}
 
+	// add new pools
 	for _, id := range missingIds {
 		sp := getNodeServerPool(c.modelCluster.Name, c.modelCluster.Location, updatedNodePools[id], fmt.Sprintf("10.0.%d.0/24", 100+globalI), uuidSuffix)
 		kubicornCluster.ServerPools = append(kubicornCluster.ServerPools, sp)
@@ -660,12 +665,54 @@ func (c *AWSCluster) UpdateCluster(request *components.UpdateClusterRequest) err
 	log.Info("Save cluster to the statestore")
 	statestore.Commit(updated)
 
+	// mark for deletion the node pool model entries that has no corresponding node pool in the cluster
+	for _, np := range c.modelCluster.Amazon.NodePools {
+		found := false
+
+		for _, kubicornNodePool := range kubicornCluster.ServerPools {
+			log.Infof("---------- np.Name %s", getNodeName(c.modelCluster.Name, np.Name))
+			log.Infof("---------- kubicornNodePool.Name: %s", kubicornNodePool.Name)
+			if kubicornNodePool != nil {
+				if getNodeName(c.modelCluster.Name, np.Name) == kubicornNodePool.Name {
+					found = true
+					break
+				}
+			}
+		}
+
+		if !found {
+			np.Delete = true
+		}
+
+	}
+
 	return nil
+}
+
+func addMarkedForDeletePools(storedNodePools []*model.AmazonNodePoolsModel, updatedNodePools []*model.AmazonNodePoolsModel) []*model.AmazonNodePoolsModel {
+	for _, storedPool := range storedNodePools {
+		found := false
+		for _, updatedPool := range updatedNodePools {
+			if storedPool.Name == updatedPool.Name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			storedPool.Delete = true
+			updatedNodePools = append(updatedNodePools, storedPool)
+		}
+	}
+	return updatedNodePools
+}
+
+func getNodeName(clusterName, name string) string {
+	return fmt.Sprintf("%s.node.%s", clusterName, name)
 }
 
 func findServerPool(pools []*kcluster.ServerPool, clusterName, name string) (int, error) {
 	for i, pool := range pools {
-		if pool != nil && pool.Name == fmt.Sprintf("%s.node.%s", clusterName, name) {
+		if pool != nil && pool.Name == getNodeName(clusterName, name) {
 			return i, nil
 		}
 	}
