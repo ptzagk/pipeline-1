@@ -13,6 +13,7 @@ import (
 	"github.com/banzaicloud/pipeline/config"
 	"github.com/banzaicloud/pipeline/model"
 	"github.com/banzaicloud/pipeline/secret"
+	"github.com/banzaicloud/pipeline/utils"
 	kcluster "github.com/kubicorn/kubicorn/apis/cluster"
 	"github.com/kubicorn/kubicorn/pkg"
 	"github.com/kubicorn/kubicorn/pkg/initapi"
@@ -597,9 +598,9 @@ func (c *AWSCluster) UpdateCluster(request *components.UpdateClusterRequest) err
 	var globalI int
 	var missingIds []int
 	for _, np := range updatedNodePools {
+		id, err := findServerPool(kubicornCluster.ServerPools, c.GetName(), np.Name)
 		if !np.Delete {
 			var id int
-			id, err := findServerPool(kubicornCluster.ServerPools, c.GetName(), np.Name)
 			if err != nil {
 				missingIds = append(missingIds, globalI)
 			} else {
@@ -608,11 +609,19 @@ func (c *AWSCluster) UpdateCluster(request *components.UpdateClusterRequest) err
 				kubicornCluster.ServerPools[id].MaxCount = np.NodeMaxCount
 			}
 			globalI += 1
+		} else {
+			log.Infof("Nodepool mark for delete: %s", np.Name)
+			if err == nil {
+				// remove from kubicorn server pool
+				kubicornCluster.ServerPools[id].MinCount = 0
+				kubicornCluster.ServerPools[id].MaxCount = 0
+			}
 		}
 	}
 
 	// add new pools
 	for _, id := range missingIds {
+		log.Infof("Add nodepool: %s", updatedNodePools[id].Name)
 		sp := getNodeServerPool(c.modelCluster.Name, c.modelCluster.Location, updatedNodePools[id], fmt.Sprintf("10.0.%d.0/24", 100+globalI), uuidSuffix)
 		kubicornCluster.ServerPools = append(kubicornCluster.ServerPools, sp)
 		globalI += 1
@@ -670,8 +679,6 @@ func (c *AWSCluster) UpdateCluster(request *components.UpdateClusterRequest) err
 		found := false
 
 		for _, kubicornNodePool := range kubicornCluster.ServerPools {
-			log.Infof("---------- np.Name %s", getNodeName(c.modelCluster.Name, np.Name))
-			log.Infof("---------- kubicornNodePool.Name: %s", kubicornNodePool.Name)
 			if kubicornNodePool != nil {
 				if getNodeName(c.modelCluster.Name, np.Name) == kubicornNodePool.Name {
 					found = true
@@ -902,46 +909,32 @@ func getBootstrapScriptFromEnv(isMaster bool) string {
 
 //AddDefaultsToUpdate adds defaults to update request
 func (c *AWSCluster) AddDefaultsToUpdate(r *components.UpdateClusterRequest) {
-	log.Info("TODO")
-	// ---- [ Node check ] ---- //
-	//if r.UpdateAmazonNode == nil {
-	//	log.Info("'node' field is empty. Fill from stored data")
-	//	r.UpdateAmazonNode = &amazon.UpdateAmazonNode{
-	//		MinCount: c.modelCluster.Amazon.NodeMinCount,
-	//		MaxCount: c.modelCluster.Amazon.NodeMaxCount,
-	//	}
-	//}
-	//
-	//// ---- [ Node min count check ] ---- //
-	//if r.UpdateAmazonNode.MinCount == 0 {
-	//	defMinCount := c.modelCluster.Amazon.NodeMinCount
-	//	log.Info(constants.TagValidateUpdateCluster, "Node minCount set to default value: ", defMinCount)
-	//	r.UpdateAmazonNode.MinCount = defMinCount
-	//}
-	//
-	//// ---- [ Node max count check ] ---- //
-	//if r.UpdateAmazonNode.MaxCount == 0 {
-	//	defMaxCount := c.modelCluster.Amazon.NodeMaxCount
-	//	log.Info(constants.TagValidateUpdateCluster, "Node maxCount set to default value: ", defMaxCount)
-	//	r.UpdateAmazonNode.MaxCount = defMaxCount
-	//}
-
+	// no needed this time, validate failed if there's missing field(s)
 }
 
 //CheckEqualityToUpdate validates the update request
 func (c *AWSCluster) CheckEqualityToUpdate(r *components.UpdateClusterRequest) error {
 	// create update request struct with the stored data to check equality
-	//preCl := &amazon.UpdateClusterAmazon{
-	//	UpdateAmazonNode: &amazon.UpdateAmazonNode{
-	//		MinCount: c.modelCluster.Amazon.NodeMinCount,
-	//		MaxCount: c.modelCluster.Amazon.NodeMaxCount,
-	//	},
-	//}
+
+	preNodePools := make(map[string]*amazon.NodePool)
+	for _, preNp := range c.modelCluster.Amazon.NodePools {
+		preNodePools[preNp.Name] = &amazon.NodePool{
+			InstanceType: preNp.NodeInstanceType,
+			SpotPrice:    preNp.NodeSpotPrice,
+			MinCount:     preNp.NodeMinCount,
+			MaxCount:     preNp.NodeMaxCount,
+			Image:        preNp.NodeImage,
+		}
+	}
+
+	preCl := &amazon.UpdateClusterAmazon{
+		NodePools: preNodePools,
+	}
 
 	log.Info("Check stored & updated cluster equals")
 
 	// check equality
-	return nil //utils.IsDifferent(r.UpdateClusterAmazon, preCl)
+	return utils.IsDifferent(r.Amazon, preCl)
 }
 
 //DeleteFromDatabase deletes model from the database
