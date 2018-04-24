@@ -149,7 +149,7 @@
   revision = "fd0dd6fe2c3d700a12c8e8b65e111f56db3dfb5f"
 
 [[projects]]
-  branch = "master"
+  branch = "update-aws"
   name = "github.com/banzaicloud/banzai-types"
   packages = [
     "components",
@@ -161,7 +161,7 @@
     "components/kubernetes",
     "constants"
   ]
-  revision = "f8ab2836b8017bc58092a1c12f5ce1d06151b4af"
+  revision = "66eaa9b2500e39c0963feb6dfc40dcd14986af97"
 
 [[projects]]
   branch = "master"
@@ -1539,8 +1539,8 @@
     "pkg/urlutil",
     "pkg/version"
   ]
-  revision = "60abcdca41f544caaecb224acbfb92aee11e1f6e"
-  version = "v2.9.0-rc3"
+  revision = "030d2c066bcf5a37931e0169b7921f3758d97095"
+  version = "v2.9.0-rc4"
 
 [[projects]]
   branch = "master"
@@ -1650,7 +1650,6 @@
     "pkg/client/clientset_generated/internalclientset/typed/scheduling/internalversion",
     "pkg/client/clientset_generated/internalclientset/typed/settings/internalversion",
     "pkg/client/clientset_generated/internalclientset/typed/storage/internalversion",
-    "pkg/client/conditions",
     "pkg/cloudprovider",
     "pkg/controller",
     "pkg/controller/daemon",
@@ -1736,6 +1735,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "4c4856c00d17db42983915acae5753b712d473b40adf96275a7367994575d068"
+  inputs-digest = "4eb5a87c9008bb8c18814d665125deef4bfedfb185280db2e48c83d95eb1566f"
   solver-name = "gps-cdcl"
   solver-version = 1

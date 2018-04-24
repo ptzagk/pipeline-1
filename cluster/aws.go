@@ -590,7 +590,6 @@ func (c *AWSCluster) UpdateCluster(request *components.UpdateClusterRequest) err
 	if err != nil {
 		return err
 	}
-	log.Debug("Resizing cluster: ", c.GetName())
 	kubicornCluster.ServerPools[0].MinCount = 1
 	kubicornCluster.ServerPools[0].MaxCount = 1
 
